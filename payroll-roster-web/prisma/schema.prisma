@@ -1,0 +1,500 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+enum AppRole {
+  VIEWER
+  EDITOR
+  IMPORTER
+  REPORT_RUNNER
+  ADMIN
+}
+
+enum ProgramCode {
+  STANDBY
+  ES
+  PESP
+}
+
+enum DatasetType {
+  CURRENT_YEAR
+  MASTER
+  CONTACTS
+  FACILITY
+}
+
+enum RosterType {
+  MONTHLY
+  FACILITY
+}
+
+enum RosterSection {
+  ADDITIONS
+  CHANGES
+  DELETIONS
+  ACTIVE
+}
+
+enum ReportMode {
+  OFFICIAL
+  AD_HOC
+}
+
+enum ExportFormat {
+  PDF
+  XLSX
+}
+
+enum ExportStatus {
+  QUEUED
+  RUNNING
+  COMPLETE
+  FAILED
+}
+
+enum ImportStatus {
+  UPLOADED
+  VALIDATED
+  COMMITTED
+  FAILED
+}
+
+enum ImportRowStatus {
+  PENDING
+  VALID
+  INVALID
+  DUPLICATE
+  COMMITTED
+}
+
+enum AuditAction {
+  POPULATE_MONTHLY_ROSTER
+  CREATE_FACILITY_ROSTER
+  IMPORT_UPLOAD
+  IMPORT_VALIDATE
+  IMPORT_COMMIT
+  SYNC_TO_MASTER
+  CLEAR_REPORT
+  EXPORT_PDF
+  EXPORT_EXCEL
+  UPDATE_ROW
+  DELETE_ROW
+}
+
+model User {
+  id           String       @id @default(cuid())
+  username     String       @unique
+  displayName  String
+  email        String?      @unique
+  isActive     Boolean      @default(true)
+  roleGrants   RoleGrant[]
+  sessions     UserSession[]
+  imports      ImportBatch[] @relation("ImportUploadedBy")
+  rosterRuns   RosterRun[]   @relation("RosterRequestedBy")
+  savedReports SavedReport[]
+  reportDefs   ReportTemplate[] @relation("ReportTemplateCreatedBy")
+  exports      ExportJob[]   @relation("ExportRequestedBy")
+  auditLogs    AuditLog[]
+  createdAt    DateTime     @default(now())
+  updatedAt    DateTime     @updatedAt
+}
+
+model RoleGrant {
+  id         String   @id @default(cuid())
+  userId     String
+  role       AppRole
+  programId  String?
+  user       User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  program    Program? @relation(fields: [programId], references: [id], onDelete: Cascade)
+  createdAt  DateTime @default(now())
+
+  @@index([userId, role])
+  @@index([programId, role])
+}
+
+model UserSession {
+  id            String    @id @default(cuid())
+  userId        String
+  sessionToken  String    @unique
+  ipAddress     String?
+  userAgent     String?
+  deviceName    String?
+  computerName  String?
+  startedAt     DateTime  @default(now())
+  endedAt       DateTime?
+  user          User      @relation(fields: [userId], references: [id], onDelete: Cascade)
+  auditLogs     AuditLog[]
+
+  @@index([userId, startedAt])
+}
+
+model Program {
+  id                 String                     @id @default(cuid())
+  code               ProgramCode                @unique
+  name               String
+  description        String?
+  isActive           Boolean                    @default(true)
+  config             ProgramConfig?
+  fieldMappings      ProgramFieldMapping[]
+  compositeKeyFields ProgramCompositeKeyField[]
+  sectionRules       ProgramSectionRule[]
+  exportTemplates    ProgramExportTemplate[]
+  roleGrants         RoleGrant[]
+  records            ProgramRecord[]
+  contacts           Contact[]
+  imports            ImportBatch[]
+  rosterRuns         RosterRun[]
+  reportTemplates    ReportTemplate[]
+  savedReports       SavedReport[]
+  exports            ExportJob[]
+  auditLogs          AuditLog[]
+  createdAt          DateTime                   @default(now())
+  updatedAt          DateTime                   @updatedAt
+}
+
+model ProgramConfig {
+  id                    String   @id @default(cuid())
+  programId             String   @unique
+  includeActiveDefault  Boolean  @default(true)
+  controlNumberField    String
+  categoryField         String?
+  activeStatusValue     String   @default("A")
+  activeEligibilityRule Json?
+  activeDedupeRule      Json
+  sortRule              Json
+  monthlyPdfBehavior    Json
+  facilityPdfBehavior   Json
+  fiscalConstants       Json
+  syncMode              String   @default("UPSERT")
+  signatureText         String
+  program               Program  @relation(fields: [programId], references: [id], onDelete: Cascade)
+  createdAt             DateTime @default(now())
+  updatedAt             DateTime @updatedAt
+}
+
+model ProgramFieldMapping {
+  id              String   @id @default(cuid())
+  programId       String
+  mappingSet      String
+  targetField     String
+  sourceField     String?
+  sourceColumnRef String?
+  transformExpr   String?
+  isRequired      Boolean  @default(false)
+  displayOrder    Int      @default(0)
+  program         Program  @relation(fields: [programId], references: [id], onDelete: Cascade)
+
+  @@index([programId, mappingSet])
+}
+
+model ProgramCompositeKeyField {
+  id          String      @id @default(cuid())
+  programId   String
+  datasetType DatasetType
+  fieldPath   String
+  dateFormat  String?
+  sortOrder   Int
+  program     Program     @relation(fields: [programId], references: [id], onDelete: Cascade)
+
+  @@index([programId, datasetType, sortOrder])
+}
+
+model ProgramSectionRule {
+  id          String        @id @default(cuid())
+  programId   String
+  section     RosterSection
+  ruleName    String
+  ruleExpr    Json
+  sortOrder   Int           @default(0)
+  program     Program       @relation(fields: [programId], references: [id], onDelete: Cascade)
+
+  @@index([programId, section, sortOrder])
+}
+
+model ProgramExportTemplate {
+  id               String   @id @default(cuid())
+  programId        String
+  templateName     String
+  templateType     String
+  isDefault        Boolean  @default(false)
+  htmlTemplate     String?
+  cssTemplate      String?
+  layoutConfig     Json
+  signatureOverride String?
+  program          Program  @relation(fields: [programId], references: [id], onDelete: Cascade)
+  createdAt        DateTime @default(now())
+  updatedAt        DateTime @updatedAt
+
+  @@index([programId, templateType])
+}
+
+model Facility {
+  id          String          @id @default(cuid())
+  code        String          @unique
+  name        String
+  agency      String?
+  region      String?
+  records     ProgramRecord[]
+  contacts    Contact[]
+  createdAt   DateTime        @default(now())
+  updatedAt   DateTime        @updatedAt
+}
+
+model Employee {
+  id               String          @id @default(cuid())
+  externalEmployeeId String?
+  firstName        String?
+  lastName         String?
+  fullName         String
+  records          ProgramRecord[]
+  createdAt        DateTime        @default(now())
+  updatedAt        DateTime        @updatedAt
+
+  @@index([externalEmployeeId])
+}
+
+model TitleJob {
+  id               String          @id @default(cuid())
+  titleCode        String?
+  titleDescription String?
+  salaryGrade      String?
+  records          ProgramRecord[]
+  createdAt        DateTime        @default(now())
+  updatedAt        DateTime        @updatedAt
+
+  @@index([titleCode])
+}
+
+model ProgramRecord {
+  id                        String      @id @default(cuid())
+  programId                 String
+  datasetType               DatasetType
+  facilityId                String?
+  employeeId                String?
+  titleJobId                String?
+  controlNumber             String?
+  category                  String?
+  status                    String?
+  dobApproval               String?
+  fiscalYear                Int?
+  agency                    String?
+  itemCode                  String?
+  esItem                    String?
+  workLocation              String?
+  programArea               String?
+  fund                      String?
+  nu                        String?
+  sg                        String?
+  payCode                   String?
+  beginDate                 DateTime?
+  endDate                   DateTime?
+  annualSalary              Decimal?    @db.Decimal(14, 2)
+  baseSalary                Decimal?    @db.Decimal(14, 2)
+  inconvAmount              Decimal?    @db.Decimal(14, 2)
+  shiftAmount               Decimal?    @db.Decimal(14, 2)
+  geoAmount                 Decimal?    @db.Decimal(14, 2)
+  locationAmount            Decimal?    @db.Decimal(14, 2)
+  esFinalSalary             Decimal?    @db.Decimal(14, 2)
+  hourlyStRate              Decimal?    @db.Decimal(12, 2)
+  hourlyOtRate              Decimal?    @db.Decimal(12, 2)
+  additionalCompHourlyRate  Decimal?    @db.Decimal(12, 2)
+  comments                  String?
+  esRecordNumber            String?
+  sourceCompositeKey        String?
+  sourceRowHash             String?
+  rawPayload                Json
+  program                   Program     @relation(fields: [programId], references: [id], onDelete: Cascade)
+  facility                  Facility?   @relation(fields: [facilityId], references: [id], onDelete: SetNull)
+  employee                  Employee?   @relation(fields: [employeeId], references: [id], onDelete: SetNull)
+  titleJob                  TitleJob?   @relation(fields: [titleJobId], references: [id], onDelete: SetNull)
+  createdAt                 DateTime    @default(now())
+  updatedAt                 DateTime    @updatedAt
+
+  @@index([programId, datasetType, controlNumber])
+  @@index([programId, datasetType, status, facilityId])
+  @@index([sourceCompositeKey])
+}
+
+model Contact {
+  id          String    @id @default(cuid())
+  programId   String
+  facilityId  String?
+  name        String
+  title       String?
+  email       String?
+  phone       String?
+  notes       String?
+  isPrimary   Boolean   @default(false)
+  program     Program   @relation(fields: [programId], references: [id], onDelete: Cascade)
+  facility    Facility? @relation(fields: [facilityId], references: [id], onDelete: SetNull)
+  createdAt   DateTime  @default(now())
+  updatedAt   DateTime  @updatedAt
+
+  @@index([programId, facilityId])
+}
+
+model ImportBatch {
+  id             String         @id @default(cuid())
+  programId      String
+  datasetType    DatasetType
+  fileName       String
+  fileChecksum   String?
+  status         ImportStatus   @default(UPLOADED)
+  summary        Json?
+  uploadedById   String
+  program        Program        @relation(fields: [programId], references: [id], onDelete: Cascade)
+  uploadedBy     User           @relation("ImportUploadedBy", fields: [uploadedById], references: [id], onDelete: Restrict)
+  stagingRows    ImportStagingRow[]
+  auditLogs      AuditLog[]
+  createdAt      DateTime       @default(now())
+  updatedAt      DateTime       @updatedAt
+
+  @@index([programId, datasetType, status])
+}
+
+model ImportStagingRow {
+  id               String         @id @default(cuid())
+  importBatchId    String
+  rowNumber        Int
+  rowPayload       Json
+  mappedPayload    Json?
+  validationErrors Json?
+  compositeKey     String?
+  isDuplicate      Boolean        @default(false)
+  status           ImportRowStatus @default(PENDING)
+  importBatch      ImportBatch    @relation(fields: [importBatchId], references: [id], onDelete: Cascade)
+  createdAt        DateTime       @default(now())
+  updatedAt        DateTime       @updatedAt
+
+  @@index([importBatchId, status])
+  @@index([importBatchId, compositeKey])
+}
+
+model RosterRun {
+  id            String        @id @default(cuid())
+  programId     String
+  rosterType    RosterType
+  controlNumber String?
+  includeActive Boolean       @default(false)
+  facilityCode  String?
+  runStatus     String        @default("GENERATED")
+  payload       Json
+  requestedById String
+  program       Program       @relation(fields: [programId], references: [id], onDelete: Cascade)
+  requestedBy   User          @relation("RosterRequestedBy", fields: [requestedById], references: [id], onDelete: Restrict)
+  sectionRows   RosterRunSectionRow[]
+  exportJobs    ExportJob[]
+  auditLogs     AuditLog[]
+  createdAt     DateTime      @default(now())
+  updatedAt     DateTime      @updatedAt
+
+  @@index([programId, rosterType, createdAt])
+}
+
+model RosterRunSectionRow {
+  id          String        @id @default(cuid())
+  rosterRunId String
+  section     RosterSection
+  sortOrder   Int
+  dedupeKey   String?
+  rowPayload  Json
+  rosterRun   RosterRun     @relation(fields: [rosterRunId], references: [id], onDelete: Cascade)
+
+  @@index([rosterRunId, section, sortOrder])
+}
+
+model ReportTemplate {
+  id            String      @id @default(cuid())
+  programId     String?
+  name          String
+  mode          ReportMode
+  sourceDataset DatasetType
+  definition    Json
+  isActive      Boolean     @default(true)
+  createdById   String?
+  program       Program?    @relation(fields: [programId], references: [id], onDelete: Cascade)
+  createdBy     User?       @relation("ReportTemplateCreatedBy", fields: [createdById], references: [id], onDelete: SetNull)
+  savedReports  SavedReport[]
+  createdAt     DateTime    @default(now())
+  updatedAt     DateTime    @updatedAt
+}
+
+model SavedReport {
+  id            String      @id @default(cuid())
+  userId        String
+  programId     String
+  templateId    String?
+  name          String
+  mode          ReportMode
+  sourceDataset DatasetType
+  filters       Json
+  columns       Json
+  sortRules     Json
+  groupRules    Json?
+  user          User        @relation(fields: [userId], references: [id], onDelete: Cascade)
+  program       Program     @relation(fields: [programId], references: [id], onDelete: Cascade)
+  template      ReportTemplate? @relation(fields: [templateId], references: [id], onDelete: SetNull)
+  exportJobs    ExportJob[]
+  createdAt     DateTime    @default(now())
+  updatedAt     DateTime    @updatedAt
+
+  @@index([userId, programId])
+}
+
+model ExportJob {
+  id             String       @id @default(cuid())
+  programId      String
+  format         ExportFormat
+  status         ExportStatus @default(QUEUED)
+  rosterRunId    String?
+  savedReportId  String?
+  requestedById  String
+  artifactPath   String?
+  requestPayload Json
+  resultPayload  Json?
+  errorMessage   String?
+  startedAt      DateTime?
+  completedAt    DateTime?
+  program        Program      @relation(fields: [programId], references: [id], onDelete: Cascade)
+  rosterRun      RosterRun?   @relation(fields: [rosterRunId], references: [id], onDelete: SetNull)
+  savedReport    SavedReport? @relation(fields: [savedReportId], references: [id], onDelete: SetNull)
+  requestedBy    User         @relation("ExportRequestedBy", fields: [requestedById], references: [id], onDelete: Restrict)
+  auditLogs      AuditLog[]
+  createdAt      DateTime     @default(now())
+  updatedAt      DateTime     @updatedAt
+
+  @@index([programId, status, createdAt])
+}
+
+model AuditLog {
+  id              String       @id @default(cuid())
+  programId       String?
+  userId          String?
+  sessionId       String?
+  action          AuditAction
+  details         Json
+  appVersion      String?
+  computerName    String?
+  deviceName      String?
+  rowsAdded       Int?
+  rowsUpdated     Int?
+  rowsDeleted     Int?
+  importBatchId   String?
+  rosterRunId     String?
+  exportJobId     String?
+  program         Program?     @relation(fields: [programId], references: [id], onDelete: SetNull)
+  user            User?        @relation(fields: [userId], references: [id], onDelete: SetNull)
+  session         UserSession? @relation(fields: [sessionId], references: [id], onDelete: SetNull)
+  importBatch     ImportBatch? @relation(fields: [importBatchId], references: [id], onDelete: SetNull)
+  rosterRun       RosterRun?   @relation(fields: [rosterRunId], references: [id], onDelete: SetNull)
+  exportJob       ExportJob?   @relation(fields: [exportJobId], references: [id], onDelete: SetNull)
+  createdAt       DateTime     @default(now())
+
+  @@index([programId, action, createdAt])
+  @@index([userId, createdAt])
+}

@@ -6,3 +6,10 @@
 .ycm_extra_conf.pyc
 Release
 Debug
+node_modules
+.next
+*.log
+.env
+.env.local
+dist
+coverage
