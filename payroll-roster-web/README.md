@@ -1,36 +1,53 @@
-This is a [Next.js](https://nextjs.org) project bootstrapped with [`create-next-app`](https://nextjs.org/docs/app/api-reference/cli/create-next-app).
+# OMH Payroll Roster Web
 
-## Getting Started
+Internal web application foundation for OMH payroll roster workflows:
 
-First, run the development server:
+- Standby
+- Extra Service (ES)
+- PESP
+
+## One-command local bootstrap
+
+From this directory, run:
 
 ```bash
-npm run dev
-# or
-yarn dev
-# or
-pnpm dev
-# or
-bun dev
+npm run bootstrap:dev
 ```
 
-Open [http://localhost:3000](http://localhost:3000) with your browser to see the result.
+The bootstrap script will:
 
-You can start editing the page by modifying `app/page.tsx`. The page auto-updates as you edit the file.
+1. install npm dependencies
+2. create `.env` from `.env.example` if missing
+3. start or create a local PostgreSQL Docker container
+4. run Prisma generate and Prisma schema push
+5. start the Next.js development server
 
-This project uses [`next/font`](https://nextjs.org/docs/app/building-your-application/optimizing/fonts) to automatically optimize and load [Geist](https://vercel.com/font), a new font family for Vercel.
+Then open:
 
-## Learn More
+- `http://localhost:3000/dashboard`
 
-To learn more about Next.js, take a look at the following resources:
+## Manual startup (alternative)
 
-- [Next.js Documentation](https://nextjs.org/docs) - learn about Next.js features and API.
-- [Learn Next.js](https://nextjs.org/learn) - an interactive Next.js tutorial.
+```bash
+npm install
+cp .env.example .env
+npm run prisma:generate
+npm run prisma:push
+npm run dev
+```
 
-You can check out [the Next.js GitHub repository](https://github.com/vercel/next.js) - your feedback and contributions are welcome!
+## Environment overrides for bootstrap
 
-## Deploy on Vercel
+The bootstrap script supports optional environment overrides:
 
-The easiest way to deploy your Next.js app is to use the [Vercel Platform](https://vercel.com/new?utm_medium=default-template&filter=next.js&utm_source=create-next-app&utm_campaign=create-next-app-readme) from the creators of Next.js.
+- `OMH_DB_CONTAINER_NAME` (default: `omh-postgres`)
+- `OMH_DB_USER` (default: `postgres`)
+- `OMH_DB_PASSWORD` (default: `postgres`)
+- `OMH_DB_NAME` (default: `omh_payroll_roster`)
+- `OMH_DB_PORT` (default: `5432`)
 
-Check out our [Next.js deployment documentation](https://nextjs.org/docs/app/building-your-application/deploying) for more details.
+Example:
+
+```bash
+OMH_DB_PORT=5433 npm run bootstrap:dev
+```

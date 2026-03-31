@@ -4,6 +4,7 @@
   "private": true,
   "scripts": {
     "dev": "next dev",
+    "bootstrap:dev": "bash ./scripts/bootstrap-dev.sh",
     "build": "next build",
     "start": "next start",
     "lint": "eslint",
